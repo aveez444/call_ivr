@@ -1,0 +1,6 @@
+# requirements.txt
+Flask>=2.0
+piopiy>=1.0.7
+python-dotenv
+gunicorn
+requests
