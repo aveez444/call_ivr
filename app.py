@@ -12,7 +12,8 @@ app = Flask(__name__)
 # PIOPIY Configuration
 PIOPIY_SECRET = os.getenv("PIOPIY_SECRET", "ccf0a102-ea6a-4f26-8d1c-7a1732eb0780")
 PIOPIY_APP_ID = os.getenv("PIOPIY_APP_ID", "4222424")
-PIOPIY_BASE_URL = "https://rest.telecmi.com/v2/ind_pcmo_make_call"
+# Use the correct endpoint for making calls
+PIOPIY_BASE_URL = "https://piopiy.telecmi.com/v2/call/make_call"
 
 # Language texts (same as your Twilio version)
 LANGUAGES = {
@@ -241,16 +242,18 @@ def make_call():
         return jsonify({"error": "missing 'to' field"}), 400
     
     try:
-        # Use the correct PIOPIY API endpoint
+        # Alternative PIOPIY API endpoint
+        PIOPIY_BASE_URL = "https://piopiy.telecmi.com/v2/call/make_call"
+        
         headers = {
             'Content-Type': 'application/json'
         }
         
-        # Based on PIOPIY documentation format
+        # Alternative payload format
         payload = {
             'appid': PIOPIY_APP_ID,
             'secret': PIOPIY_SECRET,
-            'from': '917943446575',  # Your PIOPIY number
+            'from': '917943446575',
             'to': to_number,
             'answer_url': f"{request.url_root.rstrip('/')}/call"
         }
@@ -272,7 +275,6 @@ def make_call():
                     "piopiy_response": result
                 })
             except json.JSONDecodeError:
-                # If response is not JSON, return the text
                 return jsonify({
                     "status": "success", 
                     "to": to_number,
