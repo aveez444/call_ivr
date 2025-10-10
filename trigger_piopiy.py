@@ -10,7 +10,7 @@ APP_URL = os.getenv("APP_URL", "https://call-ivr.onrender.com")
 
 def make_call():
     payload = {
-        "to": "+917756043094"  # Replace with your test number
+        "to": "+917756043094"  # Keep as string in your request, it will be converted to number in the API
     }
     
     try:
