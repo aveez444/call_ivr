@@ -1,4 +1,3 @@
-# app.py
 import os
 import requests
 from flask import Flask, request, Response, jsonify
@@ -9,9 +8,9 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# PIOPIY Configuration
+# PIOPIY Configuration - convert app_id to number
 PIOPIY_SECRET = os.getenv("PIOPIY_SECRET", "ccf0a102-ea6a-4f26-8d1c-7a1732eb0780")
-PIOPIY_APP_ID = os.getenv("PIOPIY_APP_ID", "4222424")
+PIOPIY_APP_ID = int(os.getenv("PIOPIY_APP_ID", "4222424"))  # Convert to number
 PIOPIY_BASE_URL = "https://rest.telecmi.com/v2/ind_pcmo_make_call"
 
 # Language texts (same as your Twilio version)
@@ -268,15 +267,15 @@ def make_call():
         answer_url = f"{request.url_root.rstrip('/')}/call"
         pcmo_action = generate_pcmo_action(answer_url)
         
-        # Correct PIOPIY PCMO API payload format with numeric phone numbers
+        # Correct PIOPIY PCMO API payload format with ALL numeric fields
         payload = {
-            'appid': PIOPIY_APP_ID,
+            'appid': PIOPIY_APP_ID,      # As number
             'secret': PIOPIY_SECRET,
-            'from': from_number,  # As number, not string
-            'to': to_number,      # As number, not string
+            'from': from_number,         # As number
+            'to': to_number,             # As number
             'pcmo': pcmo_action,
-            'duration': 5400,     # 90 minutes max duration
-            'extra_params': {}    # Optional extra parameters
+            'duration': 5400,            # As number
+            'extra_params': {}           # Optional extra parameters
         }
         
         print(f"Making PIOPIY API call to: {PIOPIY_BASE_URL}")

@@ -12,19 +12,22 @@ PIOPIY_APP_ID = os.getenv("PIOPIY_APP_ID")
 def test_pcmo_api():
     endpoint = "https://rest.telecmi.com/v2/ind_pcmo_make_call"
     
-    # Different PCMO formats to try - using numbers without quotes
+    # Convert appid to number
+    appid_number = int(PIOPIY_APP_ID)
+    
+    # Different PCMO formats to try
     pcmo_formats = [
         # Format 1: Simple
         [{"action": "call", "answer_url": "https://call-ivr.onrender.com/call"}],
         
-        # Format 2: With number (as integer)
+        # Format 2: With number
         [{"action": "call", "number": "virtual", "answer_url": "https://call-ivr.onrender.com/call"}],
         
-        # Format 3: Detailed with numeric from
+        # Format 3: Detailed
         [{
             "action": "call", 
             "number": "dummy",
-            "from": 917943446575,  # Remove quotes - make it a number
+            "from": 917943446575,
             "answer_url": "https://call-ivr.onrender.com/call",
             "timeout": 30
         }]
@@ -34,14 +37,14 @@ def test_pcmo_api():
         print(f"\n=== Testing PCMO Format {i} ===")
         print(f"PCMO: {json.dumps(pcmo, indent=2)}")
         
-        # Use numbers without quotes
+        # All numeric fields as numbers
         payload = {
-            'appid': PIOPIY_APP_ID,
+            'appid': appid_number,  # Convert to number
             'secret': PIOPIY_SECRET,
-            'from': 917943446575,  # Remove quotes - make it a number
-            'to': 917756043094,   # Remove quotes and + sign - make it a number
+            'from': 917943446575,   # As number
+            'to': 917756043094,     # As number
             'pcmo': pcmo,
-            'duration': 5400,
+            'duration': 5400,       # As number
             'extra_params': {}
         }
         
