@@ -248,7 +248,7 @@ def make_call():
         
         # Based on PIOPIY documentation format
         payload = {
-            'app_id': PIOPIY_APP_ID,
+            'appid': PIOPIY_APP_ID,
             'secret': PIOPIY_SECRET,
             'from': '917943446575',  # Your PIOPIY number
             'to': to_number,
