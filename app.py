@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 # PIOPIY Configuration - convert app_id to number
 PIOPIY_SECRET = os.getenv("PIOPIY_SECRET", "ccf0a102-ea6a-4f26-8d1c-7a1732eb0780")
-PIOPIY_APP_ID = int(os.getenv("PIOPIY_APP_ID", "4222424"))  # Convert to number
+PIOPIY_APP_ID = int(os.getenv("PIOPIY_APP_ID", "4222424"))
 PIOPIY_BASE_URL = "https://rest.telecmi.com/v2/ind_pcmo_make_call"
 
 # Language texts (same as your Twilio version)
@@ -230,21 +230,13 @@ def handle_pathology():
     
     return Response(generate_piopiy_xml(actions), mimetype='text/xml')
 
-def generate_pcmo_action(answer_url):
-    """Generate PCMO action for PIOPIY API"""
-    return [
-        {
-            "action": "call",
-            "answer_url": answer_url
-        }
-    ]
 
 def clean_phone_number(phone_str):
     """Convert phone string to numeric format (remove + and spaces)"""
-    # Remove +, spaces, and convert to integer
     cleaned = phone_str.replace('+', '').replace(' ', '')
     return int(cleaned)
 
+    
 @app.route("/make-call", methods=["POST"])
 def make_call():
     """Endpoint to trigger outgoing calls using PIOPIY REST API"""
@@ -255,27 +247,23 @@ def make_call():
         return jsonify({"error": "missing 'to' field"}), 400
     
     try:
-        # Clean phone numbers (remove + and convert to numbers)
-        from_number = 917943446575  # Your PIOPIY virtual number as integer
+        # Clean phone numbers
+        from_number = 917943446575
         to_number = clean_phone_number(to_number_str)
         
         headers = {
             'Content-Type': 'application/json'
         }
         
-        # Generate PCMO action
-        answer_url = f"{request.url_root.rstrip('/')}/call"
-        pcmo_action = generate_pcmo_action(answer_url)
-        
-        # Correct PIOPIY PCMO API payload format with ALL numeric fields
+        # Try without PCMO - just basic call parameters
         payload = {
-            'appid': PIOPIY_APP_ID,      # As number
+            'appid': PIOPIY_APP_ID,
             'secret': PIOPIY_SECRET,
-            'from': from_number,         # As number
-            'to': to_number,             # As number
-            'pcmo': pcmo_action,
-            'duration': 5400,            # As number
-            'extra_params': {}           # Optional extra parameters
+            'from': from_number,
+            'to': to_number,
+            'answer_url': f"{request.url_root.rstrip('/')}/call",
+            'duration': 5400,
+            'extra_params': {}
         }
         
         print(f"Making PIOPIY API call to: {PIOPIY_BASE_URL}")
