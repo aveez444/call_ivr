@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Your Render app URL (replace with your actual URL after deployment)
-APP_URL = os.getenv("APP_URL", "https://your-app-name.onrender.com")
+APP_URL = os.getenv("APP_URL", "https://call-ivr.onrender.com")
 
 def make_call():
     payload = {
