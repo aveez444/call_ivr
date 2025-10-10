@@ -1,5 +1,6 @@
 # app.py
 import os
+import requests
 from flask import Flask, request, Response, jsonify
 from dotenv import load_dotenv
 import json
@@ -11,6 +12,7 @@ app = Flask(__name__)
 # PIOPIY Configuration
 PIOPIY_SECRET = os.getenv("PIOPIY_SECRET", "ccf0a102-ea6a-4f26-8d1c-7a1732eb0780")
 PIOPIY_APP_ID = os.getenv("PIOPIY_APP_ID", "4222424")
+PIOPIY_BASE_URL = "https://api.telecmi.com/v1/call"
 
 # Language texts (same as your Twilio version)
 LANGUAGES = {
@@ -176,41 +178,115 @@ def handle_main():
     
     return Response(generate_piopiy_xml(actions), mimetype='text/xml')
 
-# Add other handlers similarly (handle-appointment-doctor, handle-pathology, etc.)
+# Add appointment and pathology handlers
+@app.route("/handle-appointment-doctor", methods=["POST"])
+def handle_appointment_doctor():
+    digits = request.form.get('digits', '')
+    lang = request.args.get('lang', 'en')
+    actions = []
+    
+    if digits == "9" or digits == "":
+        actions = [
+            '<Speak>'+LANGUAGES[lang]["appointment_menu"]+'</Speak>',
+            '<Gather numDigits="1" timeout="8" action="/handle-appointment-doctor?lang='+lang+'" method="POST"/>'
+        ]
+    else:
+        doc = DOCTOR_MAP[lang].get(digits)
+        if doc:
+            actions = [
+                '<Speak>'+LANGUAGES[lang]["appointment_thanks"].format(doc)+'</Speak>',
+                '<Speak>'+LANGUAGES[lang]["thankyou_goodbye"]+'</Speak>',
+                '<Hangup/>'
+            ]
+        else:
+            actions = [
+                '<Speak>'+LANGUAGES[lang]["invalid_selection"]+LANGUAGES[lang]["appointment_menu"]+'</Speak>',
+                '<Gather numDigits="1" timeout="8" action="/handle-appointment-doctor?lang='+lang+'" method="POST"/>'
+            ]
+    
+    return Response(generate_piopiy_xml(actions), mimetype='text/xml')
+
+@app.route("/handle-pathology", methods=["POST"])
+def handle_pathology():
+    digits = request.form.get('digits', '')
+    lang = request.args.get('lang', 'en')
+    actions = []
+    
+    if digits == "9" or digits == "":
+        actions = [
+            '<Speak>'+LANGUAGES[lang]["pathology_menu"]+'</Speak>',
+            '<Gather numDigits="1" timeout="8" action="/handle-pathology?lang='+lang+'" method="POST"/>'
+        ]
+    else:
+        test = TEST_MAP[lang].get(digits)
+        if test:
+            actions = [
+                '<Speak>'+LANGUAGES[lang]["pathology_thanks"].format(test)+'</Speak>',
+                '<Speak>'+LANGUAGES[lang]["thankyou_goodbye"]+'</Speak>',
+                '<Hangup/>'
+            ]
+        else:
+            actions = [
+                '<Speak>'+LANGUAGES[lang]["invalid_selection"]+LANGUAGES[lang]["pathology_menu"]+'</Speak>',
+                '<Gather numDigits="1" timeout="8" action="/handle-pathology?lang='+lang+'" method="POST"/>'
+            ]
+    
+    return Response(generate_piopiy_xml(actions), mimetype='text/xml')
 
 @app.route("/make-call", methods=["POST"])
 def make_call():
-    """Endpoint to trigger outgoing calls using PIOPIY"""
-    from piopiy.piopiy import Piopiy
-    
+    """Endpoint to trigger outgoing calls using PIOPIY REST API"""
     body = request.get_json(force=True, silent=True) or {}
     to_number = body.get("to")
     
     if not to_number:
         return jsonify({"error": "missing 'to' field"}), 400
     
-    # Initialize PIOPIY client
-    piopiy_client = Piopiy(PIOPIY_APP_ID, PIOPIY_SECRET)
-    
     try:
-        # Make call using PIOPIY
-        result = piopiy_client.call({
+        # Prepare the API request
+        headers = {
+            'Content-Type': 'application/json'
+        }
+        
+        payload = {
+            'app_id': PIOPIY_APP_ID,
+            'secret': PIOPIY_SECRET,
             'from': '917943446575',  # Your PIOPIY number
             'to': to_number,
             'answer_url': f"{request.url_root.rstrip('/')}/call"  # Your answer URL
-        })
+        }
         
-        return jsonify({
-            "status": "queued", 
-            "to": to_number,
-            "piopiy_response": result
-        })
-    except Exception as e:
+        # Make API call to PIOPIY
+        response = requests.post(PIOPIY_BASE_URL, json=payload, headers=headers)
+        
+        if response.status_code == 200:
+            result = response.json()
+            return jsonify({
+                "status": "queued", 
+                "to": to_number,
+                "piopiy_response": result
+            })
+        else:
+            return jsonify({
+                "error": f"PIOPIY API error: {response.status_code}",
+                "details": response.text
+            }), 500
+            
+    except Exception as e:  
         return jsonify({"error": str(e)}), 500
 
 @app.route("/")
 def home():
     return jsonify({"status": "PIOPIY IVR Server is running"})
+
+@app.route("/test", methods=["GET"])
+def test():
+    """Test endpoint to verify server is working"""
+    return jsonify({
+        "message": "Server is running",
+        "app_id": PIOPIY_APP_ID,
+        "has_secret": bool(PIOPIY_SECRET)
+    })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

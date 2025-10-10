@@ -1,6 +1,5 @@
 # requirements.txt
 Flask>=2.0
-piopiy>=1.0.7
+requests>=2.32.0
 python-dotenv
 gunicorn
-requests
