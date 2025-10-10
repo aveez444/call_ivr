@@ -12,7 +12,14 @@ app = Flask(__name__)
 # PIOPIY Configuration
 PIOPIY_SECRET = os.getenv("PIOPIY_SECRET", "ccf0a102-ea6a-4f26-8d1c-7a1732eb0780")
 PIOPIY_APP_ID = os.getenv("PIOPIY_APP_ID", "4222424")
-PIOPIY_BASE_URL = "https://api.telecmi.com/v1/call"
+
+# Try different possible API endpoints
+PIOPIY_BASE_URLS = [
+    "https://api.telecmi.com/v1/call",
+    "https://api.telecmi.com/v1/call/new",
+    "https://telecmi.com/v1/call",
+    "https://piopiy.telecmi.com/v1/call"
+]
 
 # Language texts (same as your Twilio version)
 LANGUAGES = {
@@ -158,10 +165,9 @@ def handle_main():
             '<Gather numDigits="1" timeout="8" action="/handle-appointment-doctor?lang='+lang+'" method="POST"/>'
         ]
     elif digits == "2":
-        # For emergency, dial out to another number
         actions = [
             '<Speak>'+LANGUAGES[lang]["emergency_connect"]+'</Speak>',
-            '<Dial>+919999999999</Dial>',  # Replace with actual emergency number
+            '<Dial>+919999999999</Dial>',
             '<Speak>'+LANGUAGES[lang]["emergency_fail"]+'</Speak>',
             '<Hangup/>'
         ]
@@ -178,7 +184,6 @@ def handle_main():
     
     return Response(generate_piopiy_xml(actions), mimetype='text/xml')
 
-# Add appointment and pathology handlers
 @app.route("/handle-appointment-doctor", methods=["POST"])
 def handle_appointment_doctor():
     digits = request.form.get('digits', '')
@@ -242,51 +247,77 @@ def make_call():
     if not to_number:
         return jsonify({"error": "missing 'to' field"}), 400
     
-    try:
-        # Prepare the API request
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        
-        payload = {
-            'app_id': PIOPIY_APP_ID,
-            'secret': PIOPIY_SECRET,
-            'from': '917943446575',  # Your PIOPIY number
-            'to': to_number,
-            'answer_url': f"{request.url_root.rstrip('/')}/call"  # Your answer URL
-        }
-        
-        # Make API call to PIOPIY
-        response = requests.post(PIOPIY_BASE_URL, json=payload, headers=headers)
-        
-        if response.status_code == 200:
-            result = response.json()
-            return jsonify({
-                "status": "queued", 
-                "to": to_number,
-                "piopiy_response": result
-            })
-        else:
-            return jsonify({
-                "error": f"PIOPIY API error: {response.status_code}",
-                "details": response.text
-            }), 500
+    # Try different API endpoints
+    last_error = None
+    
+    for api_url in PIOPIY_BASE_URLS:
+        try:
+            print(f"Trying API endpoint: {api_url}")
             
-    except Exception as e:  
-        return jsonify({"error": str(e)}), 500
+            headers = {
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'app_id': PIOPIY_APP_ID,
+                'secret': PIOPIY_SECRET,
+                'from': '917943446575',  # Your PIOPIY number
+                'to': to_number,
+                'answer_url': f"{request.url_root.rstrip('/')}/call"
+            }
+            
+            response = requests.post(api_url, json=payload, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                result = response.json()
+                return jsonify({
+                    "status": "queued", 
+                    "to": to_number,
+                    "piopiy_response": result,
+                    "api_endpoint_used": api_url
+                })
+            else:
+                last_error = f"API {api_url} returned status {response.status_code}: {response.text}"
+                print(f"Failed with {api_url}: {last_error}")
+                
+        except requests.exceptions.RequestException as e:
+            last_error = f"API {api_url} failed: {str(e)}"
+            print(f"Error with {api_url}: {str(e)}")
+            continue
+    
+    return jsonify({
+        "error": "All PIOPIY API endpoints failed",
+        "last_error": last_error,
+        "suggestion": "Please check the PIOPIY API documentation for the correct endpoint"
+    }), 500
 
 @app.route("/")
 def home():
     return jsonify({"status": "PIOPIY IVR Server is running"})
 
-@app.route("/test", methods=["GET"])
+@app.route("/test")
 def test():
-    """Test endpoint to verify server is working"""
     return jsonify({
         "message": "Server is running",
         "app_id": PIOPIY_APP_ID,
         "has_secret": bool(PIOPIY_SECRET)
     })
+
+@app.route("/test-dns")
+def test_dns():
+    """Test DNS resolution for PIOPIY domains"""
+    import socket
+    domains = ["api.telecmi.com", "telecmi.com", "piopiy.telecmi.com"]
+    results = {}
+    
+    for domain in domains:
+        try:
+            ip = socket.gethostbyname(domain)
+            results[domain] = {"status": "resolved", "ip": ip}
+        except Exception as e:
+            results[domain] = {"status": "failed", "error": str(e)}
+    
+    return jsonify({"dns_test": results})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
