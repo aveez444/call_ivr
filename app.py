@@ -29,32 +29,39 @@ def build_callback_path(path="/dtmf"):
 def trigger_call():
     """
     Trigger outbound call via TeleCMI REST API using Action class to build PCMO.
+    Accepts JSON: {"to": "917xxxxxxx"}
     """
     req = request.get_json() or {}
     to_number = req.get("to")
-    if not to_number or not isNumber(to_number):
+
+    # Convert to integer and validate
+    try:
+        to_number = int(to_number)
+    except (TypeError, ValueError):
         return jsonify({"error": "missing or invalid 'to' number"}), 400
 
     dtmf_callback = build_callback_path("/dtmf")
 
-    # Use Action class to build schema-compliant PCMO
+    # Build schema-compliant PCMO using Action
     pcmo = Action()
     pcmo.play(WELCOME_AUDIO, loop=1)
     pcmo.get_input(max_digits=1, timeout=8, retry=1, event_url=dtmf_callback)
 
     payload = {
-        "appid": APP_ID,
+        "appid": APP_ID,          # integer
         "secret": APP_SECRET,
-        "from": FROM_NUMBER,
-        "to": int(to_number),
+        "from": FROM_NUMBER,      # integer
+        "to": to_number,          # integer
         "duration": 3600,
         "pcmo": pcmo.PCMO()
     }
 
-    resp = requests.post("https://rest.telecmi.com/v2/ind_pcmo_make_call",
-                         json=payload,
-                         headers={"Content-Type": "application/json"})
     try:
+        resp = requests.post(
+            "https://rest.telecmi.com/v2/ind_pcmo_make_call",
+            json=payload,
+            headers={"Content-Type": "application/json"}
+        )
         body = resp.json()
     except Exception:
         body = {"status_code": resp.status_code, "text": resp.text}
