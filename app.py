@@ -7,7 +7,7 @@ app = Flask(__name__)
 # ---------- configuration from environment ----------
 APP_ID = os.environ.get("PIOPIY_APP_ID", "4222424")
 APP_SECRET = os.environ.get("PIOPIY_SECRET", "REPLACE_WITH_SECRET")
-FROM_NUMBER = os.environ.get("PIOPIY_FROM", "+917943446575")
+FROM_NUMBER = os.environ.get("PIOPIY_FROM", "917943446575")
 
 # Your public app URL (set in Render): https://call-ivr.onrender.com
 APP_URL = os.environ.get("APP_URL", "").rstrip("/")
