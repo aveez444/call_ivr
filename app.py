@@ -61,8 +61,8 @@ def trigger_call():
     payload = {
         "appid": APP_ID,
         "secret": APP_SECRET,
-        "from": FROM_NUMBER,
-        "to": to_number,
+        "from": int(FROM_NUMBER),
+        "to": int(to_number),
         "duration": 3600,
         "pcmo": pcmo
     }
