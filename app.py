@@ -59,13 +59,14 @@ def trigger_call():
     ]
 
     payload = {
-        "appid": APP_ID,
+        "appid": int(APP_ID),  # convert to number
         "secret": APP_SECRET,
-        "from": int(FROM_NUMBER),
-        "to": int(to_number),
+        "from": int(FROM_NUMBER),  # convert to number
+        "to": int(to_number),      # convert to number
         "duration": 3600,
         "pcmo": pcmo
     }
+
 
     headers = {"Content-Type": "application/json"}
     resp = requests.post(TELECMI_CALL_ENDPOINT, data=json.dumps(payload), headers=headers)
