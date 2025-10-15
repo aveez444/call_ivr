@@ -4,19 +4,42 @@ import os, json, requests
 
 app = Flask(__name__)
 
-# Fill these env-vars in Render or replace directly (not recommended)
-APP_ID = os.environ.get("PIOPIY_APPID", "4222424")
+# ---------- configuration from environment ----------
+APP_ID = os.environ.get("PIOPIY_APP_ID", "4222424")
 APP_SECRET = os.environ.get("PIOPIY_SECRET", "REPLACE_WITH_SECRET")
 FROM_NUMBER = os.environ.get("PIOPIY_FROM", "917943446575")
 
-# Replace these CDN URLs with the exact URLs from TeleCMI CDN
-WELCOME_AUDIO = os.environ.get("WELCOME_AUDIO", "https://telecmi-cdn/path/welcome.wav")
-OPTION1_AUDIO  = os.environ.get("OPTION1_AUDIO", "https://telecmi-cdn/path/option1.wav")
-OPTION2_AUDIO  = os.environ.get("OPTION2_AUDIO", "https://telecmi-cdn/path/option2.wav")
+# Your public app URL (set in Render): https://call-ivr.onrender.com
+APP_URL = os.environ.get("APP_URL", "").rstrip("/")
+
+# Replace these with the exact CDN URLs from TeleCMI (set in Render env)
+WELCOME_AUDIO = os.environ.get(
+    "WELCOME_AUDIO",
+    "https://cdn.telecmi.com/cdn/1760350048331ElevenLabs20251009T151503AnikaSweetLivelyHindiSocialMediaVoicepvcsp99s100sb100se0bm2wav6ca049c0-a81c-11f0-9f7b-3b2ce86cca8b_piopiy.wav"
+)
+OPTION1_AUDIO = os.environ.get(
+    "OPTION1_AUDIO",
+    "https://cdn.telecmi.com/cdn/1760362929284ElevenLabs20251009T151214AnikaSweetLivelyHindiSocialMediaVoicepvcsp99s100sb100se0bm2wav6a456e30-a83a-11f0-9f7b-3b2ce86cca8b_piopiy.wav"
+)
+OPTION2_AUDIO = os.environ.get("OPTION2_AUDIO", OPTION1_AUDIO)
 
 # TeleCMI REST endpoint (India)
 TELECMI_CALL_ENDPOINT = "https://rest.telecmi.com/v2/ind_pcmo_make_call"
 
+# ---------- Helpers ----------
+def build_callback_path(path="/dtmf"):
+    """
+    Build full HTTPS callback URL for TeleCMI to call.
+    Prefer APP_URL env var. If not set, fallback to request.host (less reliable).
+    """
+    if APP_URL:
+        return f"{APP_URL}{path}"
+    else:
+        # fallback to request.host
+        host = request.host_url.rstrip("/")
+        return f"{host}{path}"
+
+# ---------- Endpoints ----------
 @app.route("/call", methods=["POST"])
 def trigger_call():
     """
@@ -26,14 +49,13 @@ def trigger_call():
     req = request.get_json() or {}
     to_number = req.get("to")
     if not to_number:
-        return jsonify({"error":"missing 'to' in JSON body"}), 400
+        return jsonify({"error": "missing 'to' in JSON body"}), 400
 
-    # Build PCMO actions (simple format TeleCMI usually accepts)
-    # play welcome -> get single DTMF -> TeleCMI will POST results to /dtmf
-    dtmf_callback = f"https://{request.host}/dtmf"  # host will be call-ivr.onrender.com
+    dtmf_callback = build_callback_path("/dtmf")
+
     pcmo = [
-        {"action":"play","type":"audio","url":WELCOME_AUDIO,"loop":1},
-        {"action":"get_input","max_digits":1,"timeout":8,"retry":1,"event_url":dtmf_callback}
+        {"action": "play", "type": "audio", "url": WELCOME_AUDIO, "loop": 1},
+        {"action": "get_input", "max_digits": 1, "timeout": 8, "retry": 1, "event_url": dtmf_callback}
     ]
 
     payload = {
@@ -45,7 +67,7 @@ def trigger_call():
         "pcmo": pcmo
     }
 
-    headers = {"Content-Type":"application/json"}
+    headers = {"Content-Type": "application/json"}
     resp = requests.post(TELECMI_CALL_ENDPOINT, data=json.dumps(payload), headers=headers)
     try:
         body = resp.json()
@@ -57,29 +79,32 @@ def trigger_call():
 
 @app.route("/dtmf", methods=["POST"])
 def dtmf():
-    """TeleCMI will POST user input here. Return next PCMO to play next file and hangup."""
+    """
+    TeleCMI will POST user input here. Return next PCMO to play next file and hangup.
+    """
     data = request.get_json() or {}
-    print("DTMF webhook payload:", data)
+    app.logger.info("DTMF webhook payload: %s", data)
 
-    # Try common fields TeleCMI might send
+    # Try common keys
     digit = data.get("dtmf") or data.get("digits") or (data.get("data") or {}).get("dtmf") or ""
-    digit = str(digit)
+    digit = str(digit).strip()
 
     if digit == "1":
         pcmo = [
-            {"action":"play","type":"audio","url":OPTION1_AUDIO,"loop":1},
-            {"action":"hangup"}
+            {"action": "play", "type": "audio", "url": OPTION1_AUDIO, "loop": 1},
+            {"action": "hangup"}
         ]
     elif digit == "2":
         pcmo = [
-            {"action":"play","type":"audio","url":OPTION2_AUDIO,"loop":1},
-            {"action":"hangup"}
+            {"action": "play", "type": "audio", "url": OPTION2_AUDIO, "loop": 1},
+            {"action": "hangup"}
         ]
     else:
         # fallback: replay menu
+        fallback_callback = build_callback_path("/dtmf")
         pcmo = [
-            {"action":"play","type":"audio","url":WELCOME_AUDIO,"loop":1},
-            {"action":"get_input","max_digits":1,"timeout":8,"retry":1,"event_url":f"https://{request.host}/dtmf"}
+            {"action": "play", "type": "audio", "url": WELCOME_AUDIO, "loop": 1},
+            {"action": "get_input", "max_digits": 1, "timeout": 8, "retry": 1, "event_url": fallback_callback}
         ]
 
     return jsonify({"pcmo": pcmo})
@@ -87,16 +112,20 @@ def dtmf():
 
 @app.route("/answer", methods=["POST"])
 def answer():
-    """Optional: TeleCMI may POST call answer. We can return initial PCMO here."""
+    """
+    Optional: TeleCMI may POST call answer. Return initial PCMO here if they call answer webhook.
+    """
     data = request.get_json() or {}
-    print("ANSWER webhook payload:", data)
-    dtmf_callback = f"https://{request.host}/dtmf"
+    app.logger.info("ANSWER webhook payload: %s", data)
+
+    dtmf_callback = build_callback_path("/dtmf")
     pcmo = [
-        {"action":"play","type":"audio","url":WELCOME_AUDIO,"loop":1},
-        {"action":"get_input","max_digits":1,"timeout":8,"retry":1,"event_url":dtmf_callback}
+        {"action": "play", "type": "audio", "url": WELCOME_AUDIO, "loop": 1},
+        {"action": "get_input", "max_digits": 1, "timeout": 8, "retry": 1, "event_url": dtmf_callback}
     ]
     return jsonify({"pcmo": pcmo})
 
 
 if __name__ == "__main__":
+    # debug only
     app.run(host="0.0.0.0", port=5000, debug=True)
