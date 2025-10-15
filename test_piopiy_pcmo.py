@@ -1,74 +1,102 @@
-# test_piopiy_pcmo.py
-import requests
-import json
-from dotenv import load_dotenv
-import os
+# ivrcall.py
+from flask import Flask, request, jsonify
+import os, json, requests
 
-load_dotenv()
+app = Flask(__name__)
 
-PIOPIY_SECRET = os.getenv("PIOPIY_SECRET")
-PIOPIY_APP_ID = os.getenv("PIOPIY_APP_ID")
+# Fill these env-vars in Render or replace directly (not recommended)
+APP_ID = os.environ.get("PIOPIY_APPID", "4222424")
+APP_SECRET = os.environ.get("PIOPIY_SECRET", "REPLACE_WITH_SECRET")
+FROM_NUMBER = os.environ.get("PIOPIY_FROM", "917943446575")
 
-def test_pcmo_api():
-    endpoint = "https://rest.telecmi.com/v2/ind_pcmo_make_call"
-    
-    # Convert appid to number
-    appid_number = int(PIOPIY_APP_ID)
-    
-    # Different PCMO formats to try
-    pcmo_formats = [
-        # Format 1: Simple
-        [{"action": "call", "answer_url": "https://call-ivr.onrender.com/call"}],
-        
-        # Format 2: With number
-        [{"action": "call", "number": "virtual", "answer_url": "https://call-ivr.onrender.com/call"}],
-        
-        # Format 3: Detailed
-        [{
-            "action": "call", 
-            "number": "dummy",
-            "from": 917943446575,
-            "answer_url": "https://call-ivr.onrender.com/call",
-            "timeout": 30
-        }]
+# Replace these CDN URLs with the exact URLs from TeleCMI CDN
+WELCOME_AUDIO = os.environ.get("WELCOME_AUDIO", "https://telecmi-cdn/path/welcome.wav")
+OPTION1_AUDIO  = os.environ.get("OPTION1_AUDIO", "https://telecmi-cdn/path/option1.wav")
+OPTION2_AUDIO  = os.environ.get("OPTION2_AUDIO", "https://telecmi-cdn/path/option2.wav")
+
+# TeleCMI REST endpoint (India)
+TELECMI_CALL_ENDPOINT = "https://rest.telecmi.com/v2/ind_pcmo_make_call"
+
+@app.route("/call", methods=["POST"])
+def trigger_call():
+    """
+    Trigger outbound call via TeleCMI REST API.
+    JSON body expected: {"to": "917xxxxxx"}
+    """
+    req = request.get_json() or {}
+    to_number = req.get("to")
+    if not to_number:
+        return jsonify({"error":"missing 'to' in JSON body"}), 400
+
+    # Build PCMO actions (simple format TeleCMI usually accepts)
+    # play welcome -> get single DTMF -> TeleCMI will POST results to /dtmf
+    dtmf_callback = f"https://{request.host}/dtmf"  # host will be call-ivr.onrender.com
+    pcmo = [
+        {"action":"play","type":"audio","url":WELCOME_AUDIO,"loop":1},
+        {"action":"get_input","max_digits":1,"timeout":8,"retry":1,"event_url":dtmf_callback}
     ]
-    
-    for i, pcmo in enumerate(pcmo_formats, 1):
-        print(f"\n=== Testing PCMO Format {i} ===")
-        print(f"PCMO: {json.dumps(pcmo, indent=2)}")
-        
-        # All numeric fields as numbers
-        payload = {
-            'appid': appid_number,  # Convert to number
-            'secret': PIOPIY_SECRET,
-            'from': 917943446575,   # As number
-            'to': 917756043094,     # As number
-            'pcmo': pcmo,
-            'duration': 5400,       # As number
-            'extra_params': {}
-        }
-        
-        print(f"Payload: {json.dumps(payload, indent=2)}")
-        
-        try:
-            response = requests.post(endpoint, json=payload, timeout=10)
-            print(f"Status: {response.status_code}")
-            print(f"Response: {response.text}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('status') == 'success':
-                    print("✅ SUCCESS! Use this PCMO format.")
-                    return pcmo, payload
-        except Exception as e:
-            print(f"Error: {e}")
-    
-    return None, None
+
+    payload = {
+        "appid": APP_ID,
+        "secret": APP_SECRET,
+        "from": FROM_NUMBER,
+        "to": to_number,
+        "duration": 3600,
+        "pcmo": pcmo
+    }
+
+    headers = {"Content-Type":"application/json"}
+    resp = requests.post(TELECMI_CALL_ENDPOINT, data=json.dumps(payload), headers=headers)
+    try:
+        body = resp.json()
+    except Exception:
+        body = {"status_code": resp.status_code, "text": resp.text}
+
+    return jsonify({"telecmi_status": resp.status_code, "telecmi_response": body})
+
+
+@app.route("/dtmf", methods=["POST"])
+def dtmf():
+    """TeleCMI will POST user input here. Return next PCMO to play next file and hangup."""
+    data = request.get_json() or {}
+    print("DTMF webhook payload:", data)
+
+    # Try common fields TeleCMI might send
+    digit = data.get("dtmf") or data.get("digits") or (data.get("data") or {}).get("dtmf") or ""
+    digit = str(digit)
+
+    if digit == "1":
+        pcmo = [
+            {"action":"play","type":"audio","url":OPTION1_AUDIO,"loop":1},
+            {"action":"hangup"}
+        ]
+    elif digit == "2":
+        pcmo = [
+            {"action":"play","type":"audio","url":OPTION2_AUDIO,"loop":1},
+            {"action":"hangup"}
+        ]
+    else:
+        # fallback: replay menu
+        pcmo = [
+            {"action":"play","type":"audio","url":WELCOME_AUDIO,"loop":1},
+            {"action":"get_input","max_digits":1,"timeout":8,"retry":1,"event_url":f"https://{request.host}/dtmf"}
+        ]
+
+    return jsonify({"pcmo": pcmo})
+
+
+@app.route("/answer", methods=["POST"])
+def answer():
+    """Optional: TeleCMI may POST call answer. We can return initial PCMO here."""
+    data = request.get_json() or {}
+    print("ANSWER webhook payload:", data)
+    dtmf_callback = f"https://{request.host}/dtmf"
+    pcmo = [
+        {"action":"play","type":"audio","url":WELCOME_AUDIO,"loop":1},
+        {"action":"get_input","max_digits":1,"timeout":8,"retry":1,"event_url":dtmf_callback}
+    ]
+    return jsonify({"pcmo": pcmo})
+
 
 if __name__ == "__main__":
-    working_pcmo, working_payload = test_pcmo_api()
-    if working_pcmo:
-        print(f"\n🎉 Working PCMO format: {json.dumps(working_pcmo, indent=2)}")
-        print(f"🎉 Working payload format: {json.dumps(working_payload, indent=2)}")
-    else:
-        print("\n❌ No PCMO format worked. Please check your credentials and documentation.")
+    app.run(host="0.0.0.0", port=5000, debug=True)
