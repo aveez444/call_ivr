@@ -3,3 +3,4 @@ Flask>=2.0
 requests>=2.32.0
 python-dotenv
 gunicorn
+piopiy>=1.0
